@@ -1,44 +1,6 @@
 use std::{collections::BTreeMap, error::Error, path::PathBuf};
-
-const MNTS: &[(
-    Option<&str>,
-    &str,
-    Option<&str>,
-    nix::mount::MsFlags,
-    Option<&str>,
-); 4] = &[
-    (
-        Some("/proc"),
-        "proc",
-        Some("proc"),
-        nix::mount::MsFlags::empty(),
-        None,
-    ),
-    (
-        Some("/sys"),
-        "sys",
-        Some("sysfs"),
-        nix::mount::MsFlags::empty(),
-        None,
-    ),
-    (
-        Some("/dev"),
-        "dev",
-        None,
-        nix::mount::MsFlags::MS_BIND,
-        None,
-    ),
-    (
-        Some("/dev/pts"),
-        "dev/pts",
-        None,
-        nix::mount::MsFlags::MS_BIND,
-        None,
-    ),
-];
-
 /// Mount object struct
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct Mount {
     pub target: PathBuf,
     pub fstype: Option<String>,
@@ -62,7 +24,7 @@ impl Mount {
         }
     }
 
-    pub fn mount_chroot(
+    pub fn mount(
         &self,
         source: Option<&PathBuf>,
         root: &PathBuf,
@@ -70,6 +32,9 @@ impl Mount {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
         let target = root.join(target);
+
+        std::fs::create_dir_all(&target)?;
+
         nix::mount::mount(
             source,
             &target,
@@ -77,6 +42,15 @@ impl Mount {
             self.flags,
             self.data.as_deref(),
         )?;
+        Ok(())
+    }
+
+    pub fn umount(&self, root: &PathBuf) -> Result<(), Box<dyn Error>> {
+        // sanitize target path
+        let target = self.target.strip_prefix("/").unwrap_or(&self.target);
+        let target = root.join(target);
+
+        nix::mount::umount(&target)?;
         Ok(())
     }
 }
@@ -132,7 +106,16 @@ impl MountTable {
     pub fn mount_chroot(&self, root: &PathBuf) -> Result<(), Box<dyn Error>> {
         let ordered = self.sort_mounts();
         for (source, mount) in ordered {
-            mount.mount_chroot(Some(source), root)?;
+            mount.mount(Some(source), root)?;
+        }
+        Ok(())
+    }
+
+    pub fn umount_chroot(&self, root: &PathBuf) -> Result<(), Box<dyn Error>> {
+        let ordered = self.sort_mounts();
+        let ordered = ordered.iter().rev();
+        for (_, mount) in ordered {
+            mount.umount(root)?;
         }
         Ok(())
     }
@@ -147,50 +130,58 @@ impl MountTable {
 #[derive(Debug)]
 pub struct Container {
     pub root: PathBuf,
+    pub mount_table: MountTable,
     _initialized: bool,
 }
 
 impl Container {
     /// Create a new container.
     pub fn new(root: PathBuf) -> Self {
-        let mut s = Self {
+        let mut container = Self {
             root,
+            mount_table: MountTable::new(),
             _initialized: false,
         };
-        s.mount_tmpfs().unwrap();
-        s
-    }
-    /// Mounts temporary filesystems inside the container.
-    fn mount_tmpfs(&mut self) -> Result<(), Box<dyn Error>> {
-        for (source, target, fstype, flags, data) in MNTS {
-            // let source = source.map(|s| self.root.join(s));
-            // let target = self.root.join(target);
-            // nix::mount::mount(source.as_deref(), &target, *fstype, *flags, data.as_deref())?;
 
-            std::fs::create_dir_all(self.root.join(target))?;
-            let mut tries = 0;
-            loop {
-                if nix::mount::mount(
-                    source.as_deref(),
-                    &self.root.join(target),
-                    *fstype,
-                    *flags,
-                    data.as_deref(),
-                )
-                .is_ok()
-                {
-                    break;
-                }
-                tries += 1;
-                std::thread::sleep(std::time::Duration::from_millis(100));
-                if tries > 10 {
-                    return Err("Failed to mount tmpfs".into());
-                }
-            }
-            self._initialized = true;
-        }
+        container.setup_minimal_mounts();
+
+        container
+    }
+
+    pub fn mount(&self) -> Result<(), Box<dyn Error>> {
+        self.mount_table.mount_chroot(&self.root)?;
         Ok(())
     }
+
+    fn setup_minimal_mounts(&mut self) {
+        self.mount_table.add_mount(Mount {
+            target: "proc".into(),
+            fstype: Some("proc".to_string()),
+            flags: nix::mount::MsFlags::empty(),
+            data: None,
+        }, &"/proc".into());
+
+        self.mount_table.add_mount(Mount {
+            target: "sys".into(),
+            fstype: Some("sysfs".to_string()),
+            flags: nix::mount::MsFlags::empty(),
+            data: None,
+        }, &"/sys".into());
+
+        self.mount_table.add_mount(Mount {
+            target: "dev".into(),
+            fstype: None,
+            flags: nix::mount::MsFlags::MS_BIND,
+            data: None,
+        }, &"/dev".into());
+
+        self.mount_table.add_mount(Mount {
+            target: "dev/pts".into(),
+            fstype: None,
+            flags: nix::mount::MsFlags::MS_BIND,
+            data: None,
+        }, &"/dev/pts".into());
+    } 
 }
 
 impl Drop for Container {
@@ -198,17 +189,7 @@ impl Drop for Container {
         tracing::trace!("Dropping container, images will be unmounted");
 
         if self._initialized {
-            let mounts = vec![
-                self.root.join("dev/pts"),
-                self.root.join("dev"),
-                self.root.join("sys"),
-                self.root.join("proc"),
-            ];
-
-            for mount in mounts {
-                tracing::trace!("Unmounting {}", mount.display());
-                nix::mount::umount(&mount).unwrap();
-            }
+            self.mount_table.umount_chroot(&self.root).unwrap();
         }
     }
 }
