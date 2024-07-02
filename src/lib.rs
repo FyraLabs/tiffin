@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, error::Error, fs::File, os::fd::AsRawFd, path::{Path, PathBuf}};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs::File,
+    os::fd::AsRawFd,
+    path::{Path, PathBuf},
+};
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 /// Mount object struct
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
