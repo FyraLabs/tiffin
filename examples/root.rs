@@ -3,9 +3,17 @@ use std::process::Command;
 use tiffin::{Container, MountTable, MountTarget};
 
 fn main() {
-    let mut container = Container::new("chroot".into());
+    let mut container = Container::new("chroot".into()); // you can even add the system's rootfs to the container
 
+    container.host_bind_mount();
     container.mount().unwrap();
+    
+    // or just do 
+    // Container::new("chroot".into())
+    //    .host_bind_mount()
+    //    .run(|| {
+    //       // your code to execute inside chroot here
+    // }).unwrap();
 
     Command::new("/bin/findmnt")
         .arg("-l")

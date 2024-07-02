@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, error::Error, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs::File,
+    os::fd::{AsRawFd, RawFd},
+    path::PathBuf,
+};
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 const INIT_CWD: &str = "/proc/1/cwd/";
 /// Mount object struct
@@ -149,6 +155,7 @@ impl MountTable {
         // why is it not unmounting properly
         self.mounts.drain(..).rev().for_each(|mount| {
             println!("Unmounting {:?}", mount.target_path());
+            // this causes ENOENT when not chrooting properly
             mount.unmount(flags).unwrap();
             drop(mount);
         });
@@ -166,43 +173,26 @@ pub struct Container {
     pub mount_table: MountTable,
     _initialized: bool,
     chroot: bool,
+    sysroot: File,
+    pwd: File,
 }
 
 impl Container {
-    // todo: pivot root with this
-    // #[must_use]
-    // fn mount_rootfs(&mut self) -> Result<(), Box<dyn Error>> {
-    //     nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS)?;
-    //     // mount --bind $rootfs $rootfs
 
-    //     let rootfs = self.root.clone();
-
-    //     let m = sys_mount::Mount::builder()
-    //         .flags(MountFlags::BIND | MountFlags::REC)
-    //         .mount_autodrop(&rootfs, &rootfs, UnmountFlags::empty())?;
-
-    //     self.mount_table.add_sysmount(m);
-
-    //     // let rootfs = self.inner.get(&PathBuf::from("/")).unwrap();
-    //     // let source = PathBuf::from(INIT_CWD);
-    //     // let root = PathBuf::from("/");
-    //     // let m = rootfs.mount(&source, &root)?;
-    //     // self.mounts.push(m);
-    //     Ok(())
-    // }
 
     /// Enter chroot jail
     ///
     /// This makes use of the `chroot` syscall to enter the chroot jail.
     ///
+    #[inline(always)]
     pub fn chroot(&mut self) -> Result<(), Box<dyn Error>> {
-        // self.mount_rootfs()?;
-
-        // std::fs::create_dir_all(self.root.join("host"))?;
-        // nix::unistd::pivot_root(
-        //     &self.root.canonicalize()?,
-        //     &self.root.join("host").canonicalize()?,
-        // )?;
+        if !self._initialized {
+            // mount the tmpfs first, idiot proofing in case the
+            // programmer forgets to mount it before chrooting
+            // 
+            // This should be fine as it's going to be dismounted after dropping regardless
+            self.mount()?;
+        }
 
         nix::unistd::chroot(&self.root)?;
         self.chroot = true;
@@ -212,32 +202,37 @@ impl Container {
 
     /// Exits the chroot
     ///
-    /// This works by making use of our /proc passthrough,
-    /// and chrooting to the init process (pid 1)'s cwd.
-    ///
-    /// This should always work as long as we're not
-    /// overriding init's cwd.
-    ///
-    /// A side effect of this is that if we're running inside a nested
-    /// container, we may end up escaping that container and go straight
-    /// to the host, not just the parent container.
+    /// This works by changing the current working directory
+    /// to a raw file descriptor of the sysroot we saved earlier
+    /// in `[Container::new]`, and then chrooting to the directory
+    /// we just moved to.
+    /// 
+    /// We then also take the pwd stored earlier and move back to it,
+    /// for good measure.
+    #[inline(always)]
     pub fn exit_chroot(&mut self) -> Result<(), Box<dyn Error>> {
-        nix::unistd::chroot(INIT_CWD)?;
-        // nix::unistd::chroot("/host")?;
-        // nix::unistd::(std::path::Path::new("/"))?;
+        nix::unistd::fchdir(self.sysroot.as_raw_fd())?;
+        nix::unistd::chroot(".")?;
         self.chroot = false;
+        
+        // Let's return back to pwd
+        nix::unistd::fchdir(self.pwd.as_raw_fd())?;
         Ok(())
     }
-
+    
     /// Create a new tiffin container
     ///
     /// To use it, you need to create a new container with `root`
     /// set to the location of the chroot you'd like to use.
     pub fn new(chrootpath: PathBuf) -> Self {
+        let pwd = std::fs::File::open("/proc/self/cwd").unwrap();
+        let sysroot = std::fs::File::open("/").unwrap();
+
         let mut container = Self {
+            pwd,
             root: chrootpath,
             mount_table: MountTable::new(),
-            // sysroot: root.as_raw_fd(),
+            sysroot,
             _initialized: false,
             chroot: false,
         };
@@ -248,6 +243,7 @@ impl Container {
     }
 
     /// Run a function inside the container chroot
+    #[inline(always)]
     pub fn run<F>(&mut self, f: F) -> Result<(), Box<dyn Error>>
     where
         F: FnOnce() -> Result<(), Box<dyn Error>>,
@@ -283,6 +279,13 @@ impl Container {
         self.mount_table.umount_chroot()?;
         self._initialized = false;
         Ok(())
+    }
+    
+    /// Adds a bind mount for the system's root filesystem to
+    /// the container's root filesystem at `/run/host`
+    pub fn host_bind_mount(&mut self) -> &mut Self {
+        self.bind_mount(&PathBuf::from("/"), &PathBuf::from("/run/host"));
+        self
     }
 
     /// Adds a bind mount to a file or directory inside the container
@@ -345,17 +348,6 @@ impl Container {
             },
             &"/dev/pts".into(),
         );
-
-        // add /host mount
-        self.mount_table.add_mount(
-            MountTarget {
-                target: "host".into(),
-                fstype: None,
-                flags: MountFlags::BIND,
-                data: None,
-            },
-            &"/".into(),
-        );
     }
 }
 
@@ -368,5 +360,31 @@ impl Drop for Container {
         if self._initialized {
             self.umount().unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+// Test only if we're running as root
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::{Read, Write};
+    use std::path::PathBuf;
+    #[cfg_attr(not(feature = "root"), ignore)]
+    #[test]
+    fn test_container() {
+        let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
+        container.host_bind_mount();
+        container.run(|| {
+            let mut file = File::create("/run/host/test.txt").unwrap();
+            file.write_all(b"Hello, world!").unwrap();
+            Ok(())
+        })
+        .unwrap();
+    
+        let mut file = File::open("/tmp/tiffin/run/host/test.txt").unwrap();
+        let mut contents = String::new();
+        file.read_to_string(&mut contents).unwrap();
+        assert_eq!(contents, "Hello, world!");
     }
 }
