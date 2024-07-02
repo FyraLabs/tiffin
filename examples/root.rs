@@ -32,13 +32,13 @@ fn main() {
     // get the current working directory
     let cwd = std::env::current_dir().unwrap();
     println!("Current working directory: {:?}", cwd);
-    Command::new("ls")
-        .arg("-la")
-        .arg("/host")
-        .spawn()
-        .unwrap()
-        .wait()
-        .unwrap();
+    // Command::new("ls")
+    //     .arg("-la")
+    //     .arg("/host")
+    //     .spawn()
+    //     .unwrap()
+    //     .wait()
+    //     .unwrap();
     // container.exit_chroot().unwrap();
     
     

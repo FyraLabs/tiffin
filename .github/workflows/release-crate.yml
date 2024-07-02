@@ -1,0 +1,23 @@
+name: Release Crate
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release:
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1 #@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - uses: katyo/publish-crates@v2
+        name: Publish to crates.io
+        with:
+          registry-token: ${{ secrets.CRATES_IO_TOKEN }}
