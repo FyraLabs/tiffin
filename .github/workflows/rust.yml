@@ -54,7 +54,7 @@ jobs:
     container:
         image: rust:latest
         # Since this crate creates a new chroot, it needs to be run in a privileged container
-        options: --privileged
+        options: --privileged --security-opt seccomp=unconfined --user root
     steps:
       - name: Install dependencies
         run: |

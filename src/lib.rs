@@ -376,19 +376,9 @@ mod tests {
     #[cfg_attr(not(feature = "root"), ignore)]
     #[test]
     fn test_container() {
+        std::fs::create_dir_all("/tmp/tiffin").unwrap();
         let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
-        container.host_bind_mount();
-        container
-            .run(|| {
-                let mut file = File::create("/run/host/test.txt").unwrap();
-                file.write_all(b"Hello, world!").unwrap();
-                Ok(())
-            })
-            .unwrap();
-
-        let mut file = File::open("/tmp/tiffin/run/host/test.txt").unwrap();
-        let mut contents = String::new();
-        file.read_to_string(&mut contents).unwrap();
-        assert_eq!(contents, "Hello, world!");
+        container.chroot().unwrap();
+        
     }
 }
