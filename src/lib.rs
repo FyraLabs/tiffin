@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error, fs::File, os::fd::AsRawFd, path::PathBuf};
+use std::{collections::BTreeMap, error::Error, fs::File, os::fd::AsRawFd, path::{Path, PathBuf}};
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 /// Mount object struct
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -28,7 +28,7 @@ impl MountTarget {
     pub fn mount(
         &self,
         source: &PathBuf,
-        root: &PathBuf,
+        root: &Path,
     ) -> Result<UnmountDrop<Mount>, Box<dyn Error>> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
@@ -57,7 +57,7 @@ impl MountTarget {
         Ok(mount)
     }
 
-    pub fn umount(&self, root: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn umount(&self, root: &Path) -> Result<(), Box<dyn Error>> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
         let target = root.join(target);
@@ -77,6 +77,12 @@ pub struct MountTable {
     mounts: Vec<UnmountDrop<Mount>>,
 }
 
+impl Default for MountTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MountTable {
     pub fn new() -> Self {
         Self {
@@ -90,8 +96,8 @@ impl MountTable {
     }
 
     /// Adds a mount to the table
-    pub fn add_mount(&mut self, mount: MountTarget, source: &PathBuf) {
-        self.inner.insert(source.clone(), mount);
+    pub fn add_mount(&mut self, mount: MountTarget, source: &Path) {
+        self.inner.insert(source.to_path_buf(), mount);
     }
 
     pub fn add_sysmount(&mut self, mount: UnmountDrop<Mount>) {
@@ -120,7 +126,7 @@ impl MountTable {
     }
 
     /// Mounts everything to the root
-    pub fn mount_chroot(&mut self, root: &PathBuf) -> Result<(), Box<dyn Error>> {
+    pub fn mount_chroot(&mut self, root: &Path) -> Result<(), Box<dyn Error>> {
         // let ordered = self.sort_mounts();
         // for (source, mount) in ordered {
         //     let m = mount.mount(source, root)?;
@@ -280,7 +286,7 @@ impl Container {
     }
 
     /// Adds a bind mount to a file or directory inside the container
-    pub fn bind_mount(&mut self, source: &PathBuf, target: &PathBuf) {
+    pub fn bind_mount(&mut self, source: &Path, target: &Path) {
         self.mount_table.add_mount(
             MountTarget {
                 target: target.to_owned(),
@@ -295,7 +301,7 @@ impl Container {
     /// Adds an additional mount target to the container mount table
     ///
     /// Useful for mounting disks or other filesystems
-    pub fn add_mount(&mut self, mount: MountTarget, source: &PathBuf) {
+    pub fn add_mount(&mut self, mount: MountTarget, source: &Path) {
         self.mount_table.add_mount(mount, source);
     }
 
@@ -307,7 +313,7 @@ impl Container {
                 flags: MountFlags::empty(),
                 data: None,
             },
-            &"/proc".into(),
+            Path::new("/proc"),
         );
 
         self.mount_table.add_mount(
@@ -317,7 +323,7 @@ impl Container {
                 flags: MountFlags::empty(),
                 data: None,
             },
-            &"/sys".into(),
+            Path::new("/sys"),
         );
 
         self.mount_table.add_mount(
@@ -327,7 +333,7 @@ impl Container {
                 flags: MountFlags::BIND,
                 data: None,
             },
-            &"/dev".into(),
+            Path::new("/dev"),
         );
 
         self.mount_table.add_mount(
@@ -337,7 +343,7 @@ impl Container {
                 flags: MountFlags::BIND,
                 data: None,
             },
-            &"/dev/pts".into(),
+            Path::new("/dev/pts"),
         );
     }
 }
