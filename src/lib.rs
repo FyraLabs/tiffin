@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    error::Error,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, error::Error, path::PathBuf};
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 const INIT_CWD: &str = "/proc/1/cwd/";
 /// Mount object struct
@@ -98,7 +94,7 @@ impl MountTable {
     pub fn add_mount(&mut self, mount: MountTarget, source: &PathBuf) {
         self.inner.insert(source.clone(), mount);
     }
-    
+
     pub fn add_sysmount(&mut self, mount: UnmountDrop<Mount>) {
         self.mounts.push(mount);
     }
@@ -173,25 +169,19 @@ pub struct Container {
 }
 
 impl Container {
-
     // todo: pivot root with this
     // #[must_use]
     // fn mount_rootfs(&mut self) -> Result<(), Box<dyn Error>> {
     //     nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNS)?;
     //     // mount --bind $rootfs $rootfs
-        
-        
+
     //     let rootfs = self.root.clone();
-        
+
     //     let m = sys_mount::Mount::builder()
     //         .flags(MountFlags::BIND | MountFlags::REC)
     //         .mount_autodrop(&rootfs, &rootfs, UnmountFlags::empty())?;
-        
+
     //     self.mount_table.add_sysmount(m);
-        
-        
-        
-        
 
     //     // let rootfs = self.inner.get(&PathBuf::from("/")).unwrap();
     //     // let source = PathBuf::from(INIT_CWD);
@@ -200,7 +190,7 @@ impl Container {
     //     // self.mounts.push(m);
     //     Ok(())
     // }
-    
+
     /// Enter chroot jail
     ///
     /// This makes use of the `chroot` syscall to enter the chroot jail.
@@ -213,7 +203,6 @@ impl Container {
         //     &self.root.canonicalize()?,
         //     &self.root.join("host").canonicalize()?,
         // )?;
-        
 
         nix::unistd::chroot(&self.root)?;
         self.chroot = true;
@@ -233,7 +222,6 @@ impl Container {
     /// container, we may end up escaping that container and go straight
     /// to the host, not just the parent container.
     pub fn exit_chroot(&mut self) -> Result<(), Box<dyn Error>> {
-        
         nix::unistd::chroot(INIT_CWD)?;
         // nix::unistd::chroot("/host")?;
         // nix::unistd::(std::path::Path::new("/"))?;
@@ -357,7 +345,7 @@ impl Container {
             },
             &"/dev/pts".into(),
         );
-        
+
         // add /host mount
         self.mount_table.add_mount(
             MountTarget {
@@ -366,7 +354,7 @@ impl Container {
                 flags: MountFlags::BIND,
                 data: None,
             },
-            &"/".into()
+            &"/".into(),
         );
     }
 }
