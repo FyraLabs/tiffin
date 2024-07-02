@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           apt-get update
-          apt-get install -y libblockdev-loop-dev build-essential
+          apt-get install -y libblockdev-loop-dev build-essential libclang-dev clang llvm-dev
       - name: Checkout code
         uses: actions/checkout@v4
 
