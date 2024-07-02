@@ -52,7 +52,7 @@ jobs:
     if: (github.event_name != 'pull_request' && ! github.event.pull_request.head.repo.fork) || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork)
     runs-on: ubuntu-latest
     container:
-        image: fedora:latest
+        image: rust:latest
         # Since this crate creates a new chroot, it needs to be run in a privileged container
         options: --privileged
     steps:
