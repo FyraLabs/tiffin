@@ -366,7 +366,6 @@ impl Drop for Container {
     }
 }
 
-
 // We can't really reproduce this test in a CI environment, so let's just ignore it
 #[cfg(test)]
 // Test only if we're running as root
