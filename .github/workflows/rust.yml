@@ -56,6 +56,10 @@ jobs:
         # Since this crate creates a new chroot, it needs to be run in a privileged container
         options: --privileged
     steps:
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y libblockdev-loop-dev build-essential
       - name: Checkout code
         uses: actions/checkout@v4
 

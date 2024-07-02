@@ -11,5 +11,5 @@ license = "MIT"
 
 [dependencies]
 nix = { version = "0.27.1", features = ["fs", "env", "dir", "user", "mount", "sched"] }
-sys-mount = "3.0.1"
+sys-mount = "3"
 tracing = "0.1.37"
