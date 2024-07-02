@@ -2,11 +2,10 @@ use std::{
     collections::BTreeMap,
     error::Error,
     fs::File,
-    os::fd::{AsRawFd, RawFd},
+    os::fd::AsRawFd,
     path::PathBuf,
 };
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
-const INIT_CWD: &str = "/proc/1/cwd/";
 /// Mount object struct
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
 pub struct MountTarget {

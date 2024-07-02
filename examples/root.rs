@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use tiffin::{Container, MountTable, MountTarget};
+use tiffin::Container;
 
 fn main() {
     let mut container = Container::new("chroot".into()); // you can even add the system's rootfs to the container
