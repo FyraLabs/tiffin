@@ -1,4 +1,10 @@
-use std::{collections::BTreeMap, error::Error, fs::File, os::fd::AsRawFd, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    fs::File,
+    os::fd::AsRawFd,
+    path::PathBuf,
+};
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 /// Mount object struct
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone)]
@@ -171,6 +177,8 @@ pub struct Container {
 }
 
 impl Container {
+
+
     /// Enter chroot jail
     ///
     /// This makes use of the `chroot` syscall to enter the chroot jail.
@@ -180,7 +188,7 @@ impl Container {
         if !self._initialized {
             // mount the tmpfs first, idiot proofing in case the
             // programmer forgets to mount it before chrooting
-            //
+            // 
             // This should be fine as it's going to be dismounted after dropping regardless
             self.mount()?;
         }
@@ -197,7 +205,7 @@ impl Container {
     /// to a raw file descriptor of the sysroot we saved earlier
     /// in `[Container::new]`, and then chrooting to the directory
     /// we just moved to.
-    ///
+    /// 
     /// We then also take the pwd stored earlier and move back to it,
     /// for good measure.
     #[inline(always)]
@@ -205,12 +213,12 @@ impl Container {
         nix::unistd::fchdir(self.sysroot.as_raw_fd())?;
         nix::unistd::chroot(".")?;
         self.chroot = false;
-
+        
         // Let's return back to pwd
         nix::unistd::fchdir(self.pwd.as_raw_fd())?;
         Ok(())
     }
-
+    
     /// Create a new tiffin container
     ///
     /// To use it, you need to create a new container with `root`
@@ -271,7 +279,7 @@ impl Container {
         self._initialized = false;
         Ok(())
     }
-
+    
     /// Adds a bind mount for the system's root filesystem to
     /// the container's root filesystem at `/run/host`
     pub fn host_bind_mount(&mut self) -> &mut Self {
@@ -366,14 +374,13 @@ mod tests {
     fn test_container() {
         let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
         container.host_bind_mount();
-        container
-            .run(|| {
-                let mut file = File::create("/run/host/test.txt").unwrap();
-                file.write_all(b"Hello, world!").unwrap();
-                Ok(())
-            })
-            .unwrap();
-
+        container.run(|| {
+            let mut file = File::create("/run/host/test.txt").unwrap();
+            file.write_all(b"Hello, world!").unwrap();
+            Ok(())
+        })
+        .unwrap();
+    
         let mut file = File::open("/tmp/tiffin/run/host/test.txt").unwrap();
         let mut contents = String::new();
         file.read_to_string(&mut contents).unwrap();
