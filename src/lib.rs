@@ -1,8 +1,6 @@
-use nix::mount::MsFlags;
 use std::{
     collections::BTreeMap,
     error::Error,
-    os::fd::{AsRawFd, RawFd},
     path::PathBuf,
 };
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
