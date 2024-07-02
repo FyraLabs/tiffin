@@ -366,18 +366,23 @@ impl Drop for Container {
     }
 }
 
+
+// We can't really reproduce this test in a CI environment, so let's just ignore it
 #[cfg(test)]
 // Test only if we're running as root
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::{Read, Write};
     use std::path::PathBuf;
-    #[cfg_attr(not(feature = "root"), ignore)]
+    #[ignore = "This test requires root"]
     #[test]
     fn test_container() {
         std::fs::create_dir_all("/tmp/tiffin").unwrap();
         let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
-        container.chroot().unwrap();
+        container
+            .run(|| {
+                std::fs::create_dir_all("/tmp/tiffin/test").unwrap();
+                Ok(())
+            })
+            .unwrap();
     }
 }
