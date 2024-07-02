@@ -379,6 +379,5 @@ mod tests {
         std::fs::create_dir_all("/tmp/tiffin").unwrap();
         let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
         container.chroot().unwrap();
-        
     }
 }
