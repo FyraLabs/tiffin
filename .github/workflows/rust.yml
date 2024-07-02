@@ -1,10 +1,16 @@
 name: Rust
 
 on:
-  push:
-  pull_request:
+    push:
+    pull_request:
 
 jobs:
-
-  rust:
-    uses: FyraLabs/actions/.github/workflows/rust.yml@main
+    rust:
+        runs-on: ubuntu-latest
+        container:
+            image: fedora:latest
+            options: --privileged
+        steps:
+            - name: Run workflow
+              uses: FyraLabs/actions/.github/workflows/rust.yml@main
+              
