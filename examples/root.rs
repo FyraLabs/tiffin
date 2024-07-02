@@ -7,8 +7,8 @@ fn main() {
 
     container.host_bind_mount();
     container.mount().unwrap();
-    
-    // or just do 
+
+    // or just do
     // Container::new("chroot".into())
     //    .host_bind_mount()
     //    .run(|| {
