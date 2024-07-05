@@ -31,6 +31,7 @@ impl MountTarget {
         }
     }
 
+    #[tracing::instrument]
     pub fn mount(
         &self,
         source: &PathBuf,
@@ -38,7 +39,15 @@ impl MountTarget {
     ) -> Result<UnmountDrop<Mount>, Box<dyn Error>> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
-        let target = root.join(target).canonicalize()?;
+        tracing::info!(?root, "Mounting {:?} to {:?}", source, target);
+        let target = {
+            let t = root.join(target);
+            if !target.exists() {
+                // create the target directory
+                std::fs::create_dir_all(&target)?;
+            }
+            t
+        };
 
         std::fs::create_dir_all(&target)?;
 

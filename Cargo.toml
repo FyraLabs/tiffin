@@ -1,7 +1,7 @@
 [package]
 name = "tiffin"
 description = "A minimal container runtime for Linux for setting up chroot-like environments"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 keywords = ["container", "runtime", "chroot", "linux", "nix"]
 license = "MIT"
