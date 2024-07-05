@@ -168,7 +168,7 @@ impl MountTable {
         let flags = UnmountFlags::DETACH;
         // why is it not unmounting properly
         self.mounts.drain(..).rev().for_each(|mount| {
-            println!("Unmounting {:?}", mount.target_path());
+            tracing::trace!("Unmounting {:?}", mount.target_path());
             // this causes ENOENT when not chrooting properly
             mount.unmount(flags).unwrap();
             drop(mount);
