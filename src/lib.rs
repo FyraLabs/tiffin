@@ -36,7 +36,7 @@ impl MountTarget {
         &self,
         source: &PathBuf,
         root: &Path,
-    ) -> Result<UnmountDrop<Mount>, Box<dyn Error>> {
+    ) -> Result<UnmountDrop<Mount>, std::io::Error> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
         tracing::info!(?root, "Mounting {:?} to {:?}", source, target);
@@ -72,7 +72,7 @@ impl MountTarget {
         Ok(mount)
     }
 
-    pub fn umount(&self, root: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn umount(&self, root: &Path) -> Result<(), std::io::Error> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
         let target = root.join(target);
@@ -141,7 +141,7 @@ impl MountTable {
     }
 
     /// Mounts everything to the root
-    pub fn mount_chroot(&mut self, root: &Path) -> Result<(), Box<dyn Error>> {
+    pub fn mount_chroot(&mut self, root: &Path) -> Result<(), std::io::Error> {
         // let ordered = self.sort_mounts();
         // for (source, mount) in ordered {
         //     let m = mount.mount(source, root)?;
@@ -163,7 +163,7 @@ impl MountTable {
         Ok(())
     }
 
-    pub fn umount_chroot(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn umount_chroot(&mut self) -> Result<(), std::io::Error> {
         // let ordered = self.sort_mounts();
         let flags = UnmountFlags::DETACH;
         // why is it not unmounting properly
@@ -197,7 +197,7 @@ impl Container {
     /// This makes use of the `chroot` syscall to enter the chroot jail.
     ///
     #[inline(always)]
-    pub fn chroot(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn chroot(&mut self) -> Result<(), std::io::Error> {
         if !self._initialized {
             // mount the tmpfs first, idiot proofing in case the
             // programmer forgets to mount it before chrooting
@@ -222,7 +222,7 @@ impl Container {
     /// We then also take the pwd stored earlier and move back to it,
     /// for good measure.
     #[inline(always)]
-    pub fn exit_chroot(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn exit_chroot(&mut self) -> Result<(), std::io::Error> {
         nix::unistd::fchdir(self.sysroot.as_raw_fd())?;
         nix::unistd::chroot(".")?;
         self.chroot = false;
@@ -256,9 +256,10 @@ impl Container {
 
     /// Run a function inside the container chroot
     #[inline(always)]
-    pub fn run<F>(&mut self, f: F) -> Result<(), Box<dyn Error>>
+    pub fn run<F, E>(&mut self, f: F) -> Result<(), E>
     where
-        F: FnOnce() -> Result<(), Box<dyn Error>>,
+        F: FnOnce() -> Result<(), E>,
+        E: Error + From<std::io::Error>
     {
         // Only mount and chroot if we're not already initialized
         if !self._initialized {
@@ -280,14 +281,14 @@ impl Container {
     }
 
     /// Start mounting files inside the container
-    pub fn mount(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn mount(&mut self) -> Result<(), std::io::Error> {
         self.mount_table.mount_chroot(&self.root)?;
         self._initialized = true;
         Ok(())
     }
 
     /// Unmounts all mountpoints inside the container
-    pub fn umount(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn umount(&mut self) -> Result<(), std::io::Error> {
         self.mount_table.umount_chroot()?;
         self._initialized = false;
         Ok(())
@@ -389,7 +390,7 @@ mod tests {
         container
             .run(|| {
                 std::fs::create_dir_all("/tmp/tiffin/test").unwrap();
-                Ok(())
+                std::io::Result::Ok(())
             })
             .unwrap();
     }
