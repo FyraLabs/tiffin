@@ -259,7 +259,7 @@ impl Container {
     pub fn run<F, E>(&mut self, f: F) -> Result<(), E>
     where
         F: FnOnce() -> Result<(), E>,
-        E: Error + From<std::io::Error>
+        E: Error + From<std::io::Error>,
     {
         // Only mount and chroot if we're not already initialized
         if !self._initialized {
