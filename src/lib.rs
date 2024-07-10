@@ -1,5 +1,6 @@
+use itertools::Itertools;
 use std::{
-    collections::BTreeMap,
+    collections::HashMap,
     error::Error,
     fs::File,
     os::fd::AsRawFd,
@@ -13,6 +14,17 @@ pub struct MountTarget {
     pub fstype: Option<String>,
     pub flags: MountFlags,
     pub data: Option<String>,
+}
+
+impl Default for MountTarget {
+    fn default() -> Self {
+        Self {
+            target: Default::default(),
+            fstype: Default::default(),
+            flags: MountFlags::empty(),
+            data: Default::default(),
+        }
+    }
 }
 
 impl MountTarget {
@@ -32,23 +44,11 @@ impl MountTarget {
     }
 
     #[tracing::instrument]
-    pub fn mount(
-        &self,
-        source: &PathBuf,
-        root: &Path,
-    ) -> Result<UnmountDrop<Mount>, std::io::Error> {
+    pub fn mount(&self, source: &PathBuf, root: &Path) -> std::io::Result<UnmountDrop<Mount>> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
-        tracing::info!(?root, "Mounting {:?} to {:?}", source, target);
-        let target = {
-            let t = root.join(target);
-            if !target.exists() {
-                // create the target directory
-                std::fs::create_dir_all(&target)?;
-            }
-            t
-        };
-
+        tracing::info!(?root, "Mounting {source:?} to {target:?}");
+        let target = root.join(target);
         std::fs::create_dir_all(&target)?;
 
         // nix::mount::mount(
@@ -60,8 +60,7 @@ impl MountTarget {
         // )?;
         let mut mount = Mount::builder().flags(self.flags);
         if let Some(fstype) = &self.fstype {
-            let fstype = fstype.as_str();
-            mount = mount.fstype(FilesystemType::Manual(fstype));
+            mount = mount.fstype(FilesystemType::Manual(&fstype));
         }
 
         if let Some(data) = &self.data {
@@ -72,7 +71,7 @@ impl MountTarget {
         Ok(mount)
     }
 
-    pub fn umount(&self, root: &Path) -> Result<(), std::io::Error> {
+    pub fn umount(&self, root: &Path) -> std::io::Result<()> {
         // sanitize target path
         let target = self.target.strip_prefix("/").unwrap_or(&self.target);
         let target = root.join(target);
@@ -84,35 +83,29 @@ impl MountTarget {
 
 /// Mount Table Struct
 /// This is used to mount filesystems inside the container. It is essentially an fstab, for the container.
-// #[derive(Debug)]
+#[derive(Default)]
 pub struct MountTable {
     /// The table of mounts
     /// The key is the device name, and value is the mount object
-    inner: BTreeMap<PathBuf, MountTarget>,
+    inner: HashMap<PathBuf, MountTarget>,
     mounts: Vec<UnmountDrop<Mount>>,
-}
-
-impl Default for MountTable {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl MountTable {
     pub fn new() -> Self {
         Self {
-            inner: BTreeMap::new(),
+            inner: HashMap::new(),
             mounts: Vec::new(),
         }
     }
     /// Sets the mount table
-    pub fn set_table(&mut self, table: BTreeMap<PathBuf, MountTarget>) {
+    pub fn set_table(&mut self, table: HashMap<PathBuf, MountTarget>) {
         self.inner = table;
     }
 
     /// Adds a mount to the table
-    pub fn add_mount(&mut self, mount: MountTarget, source: &Path) {
-        self.inner.insert(source.to_path_buf(), mount);
+    pub fn add_mount(&mut self, mount: MountTarget, source: PathBuf) {
+        self.inner.insert(source, mount);
     }
 
     pub fn add_sysmount(&mut self, mount: UnmountDrop<Mount>) {
@@ -122,26 +115,19 @@ impl MountTable {
     /// Sort mounts by mountpoint and depth
     /// Closer to root, and root is first
     /// everything else is either sorted by depth, or alphabetically
-    fn sort_mounts(&self) -> Vec<(&PathBuf, &MountTarget)> {
-        let mut mounts: Vec<(&PathBuf, &MountTarget)> = self.inner.iter().collect();
-        mounts.sort_unstable_by(|(_, a), (_, b)| {
-            let am = a.target.display().to_string().matches('/').count();
-            let bm = b.target.display().to_string().matches('/').count();
-            if a.target.display().to_string() == "/" {
-                std::cmp::Ordering::Less
-            } else if b.target.display().to_string() == "/" {
-                std::cmp::Ordering::Greater
-            } else if am == bm {
-                a.target.cmp(&b.target)
-            } else {
-                am.cmp(&bm)
+    fn sort_mounts(&self) -> impl Iterator<Item = (&PathBuf, &MountTarget)> {
+        self.inner.iter().sorted_unstable_by(|(_, a), (_, b)| {
+            match (a.target.components().count(), b.target.components().count()) {
+                (1, _) => std::cmp::Ordering::Less,    // root dir
+                (_, 1) => std::cmp::Ordering::Greater, // root dir
+                (x, y) if x == y => a.target.cmp(&b.target),
+                (x, y) => x.cmp(&y),
             }
-        });
-        mounts
+        })
     }
 
     /// Mounts everything to the root
-    pub fn mount_chroot(&mut self, root: &Path) -> Result<(), std::io::Error> {
+    pub fn mount_chroot(&mut self, root: &Path) -> std::io::Result<()> {
         // let ordered = self.sort_mounts();
         // for (source, mount) in ordered {
         //     let m = mount.mount(source, root)?;
@@ -150,30 +136,21 @@ impl MountTable {
         //
         self.mounts = self
             .sort_mounts()
-            .iter()
             .map(|(source, mount)| {
                 tracing::trace!(?mount, ?source, "Mounting");
-                // make source if not exists
-                if !root.join(source).exists() {
-                    std::fs::create_dir_all(root.join(source)).unwrap();
-                }
-                mount.mount(source, root).unwrap()
+                std::fs::create_dir_all(root.join(source))?;
+                mount.mount(source, root)
             })
-            .collect();
+            .collect::<std::io::Result<_>>()?;
         Ok(())
     }
 
-    pub fn umount_chroot(&mut self) -> Result<(), std::io::Error> {
-        // let ordered = self.sort_mounts();
-        let flags = UnmountFlags::DETACH;
-        // why is it not unmounting properly
-        self.mounts.drain(..).rev().for_each(|mount| {
+    pub fn umount_chroot(&mut self) -> std::io::Result<()> {
+        self.mounts.drain(..).rev().try_for_each(|mount| {
             tracing::trace!("Unmounting {:?}", mount.target_path());
             // this causes ENOENT when not chrooting properly
-            mount.unmount(flags).unwrap();
-            drop(mount);
-        });
-        Ok(())
+            mount.unmount(UnmountFlags::DETACH)
+        })
     }
 }
 
@@ -197,7 +174,7 @@ impl Container {
     /// This makes use of the `chroot` syscall to enter the chroot jail.
     ///
     #[inline(always)]
-    pub fn chroot(&mut self) -> Result<(), std::io::Error> {
+    pub fn chroot(&mut self) -> std::io::Result<()> {
         if !self._initialized {
             // mount the tmpfs first, idiot proofing in case the
             // programmer forgets to mount it before chrooting
@@ -222,7 +199,7 @@ impl Container {
     /// We then also take the pwd stored earlier and move back to it,
     /// for good measure.
     #[inline(always)]
-    pub fn exit_chroot(&mut self) -> Result<(), std::io::Error> {
+    pub fn exit_chroot(&mut self) -> std::io::Result<()> {
         nix::unistd::fchdir(self.sysroot.as_raw_fd())?;
         nix::unistd::chroot(".")?;
         self.chroot = false;
@@ -281,14 +258,14 @@ impl Container {
     }
 
     /// Start mounting files inside the container
-    pub fn mount(&mut self) -> Result<(), std::io::Error> {
+    pub fn mount(&mut self) -> std::io::Result<()> {
         self.mount_table.mount_chroot(&self.root)?;
         self._initialized = true;
         Ok(())
     }
 
     /// Unmounts all mountpoints inside the container
-    pub fn umount(&mut self) -> Result<(), std::io::Error> {
+    pub fn umount(&mut self) -> std::io::Result<()> {
         self.mount_table.umount_chroot()?;
         self._initialized = false;
         Ok(())
@@ -297,18 +274,17 @@ impl Container {
     /// Adds a bind mount for the system's root filesystem to
     /// the container's root filesystem at `/run/host`
     pub fn host_bind_mount(&mut self) -> &mut Self {
-        self.bind_mount(&PathBuf::from("/"), &PathBuf::from("/run/host"));
+        self.bind_mount(PathBuf::from("/"), PathBuf::from("/run/host"));
         self
     }
 
     /// Adds a bind mount to a file or directory inside the container
-    pub fn bind_mount(&mut self, source: &Path, target: &Path) {
+    pub fn bind_mount(&mut self, source: PathBuf, target: PathBuf) {
         self.mount_table.add_mount(
             MountTarget {
-                target: target.to_owned(),
-                fstype: None,
+                target,
                 flags: MountFlags::BIND,
-                data: None,
+                ..MountTarget::default()
             },
             source,
         );
@@ -317,7 +293,7 @@ impl Container {
     /// Adds an additional mount target to the container mount table
     ///
     /// Useful for mounting disks or other filesystems
-    pub fn add_mount(&mut self, mount: MountTarget, source: &Path) {
+    pub fn add_mount(&mut self, mount: MountTarget, source: PathBuf) {
         self.mount_table.add_mount(mount, source);
     }
 
@@ -326,41 +302,22 @@ impl Container {
             MountTarget {
                 target: "proc".into(),
                 fstype: Some("proc".to_string()),
-                flags: MountFlags::empty(),
-                data: None,
+                ..MountTarget::default()
             },
-            Path::new("/proc"),
+            PathBuf::from("/proc"),
         );
 
         self.mount_table.add_mount(
             MountTarget {
                 target: "sys".into(),
                 fstype: Some("sysfs".to_string()),
-                flags: MountFlags::empty(),
-                data: None,
+                ..MountTarget::default()
             },
-            Path::new("/sys"),
+            PathBuf::from("/sys"),
         );
 
-        self.mount_table.add_mount(
-            MountTarget {
-                target: "dev".into(),
-                fstype: None,
-                flags: MountFlags::BIND,
-                data: None,
-            },
-            Path::new("/dev"),
-        );
-
-        self.mount_table.add_mount(
-            MountTarget {
-                target: "dev/pts".into(),
-                fstype: None,
-                flags: MountFlags::BIND,
-                data: None,
-            },
-            Path::new("/dev/pts"),
-        );
+        self.bind_mount("/dev".into(), "dev".into());
+        self.bind_mount("/dev/pts".into(), "dev/pts".into());
     }
 }
 
