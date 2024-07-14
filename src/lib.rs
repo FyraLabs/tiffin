@@ -60,7 +60,7 @@ impl MountTarget {
         // )?;
         let mut mount = Mount::builder().flags(self.flags);
         if let Some(fstype) = &self.fstype {
-            mount = mount.fstype(FilesystemType::Manual(&fstype));
+            mount = mount.fstype(FilesystemType::Manual(fstype));
         }
 
         if let Some(data) = &self.data {
