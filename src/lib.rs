@@ -1,7 +1,6 @@
 use itertools::Itertools;
 use std::{
     collections::HashMap,
-    error::Error,
     fs::File,
     os::fd::AsRawFd,
     path::{Path, PathBuf},
@@ -233,10 +232,9 @@ impl Container {
 
     /// Run a function inside the container chroot
     #[inline(always)]
-    pub fn run<F, E>(&mut self, f: F) -> Result<(), E>
+    pub fn run<F, T>(&mut self, f: F) -> std::io::Result<T>
     where
-        F: FnOnce() -> Result<(), E>,
-        E: Error + From<std::io::Error>,
+        F: FnOnce() -> T,
     {
         // Only mount and chroot if we're not already initialized
         if !self._initialized {
@@ -246,15 +244,14 @@ impl Container {
             self.chroot()?;
         }
         tracing::trace!("Running function inside container");
-        f()?;
+        let ret = f();
         if self.chroot {
             self.exit_chroot()?;
         }
         if self._initialized {
             self.umount()?;
         }
-
-        Ok(())
+        Ok(ret)
     }
 
     /// Start mounting files inside the container
@@ -345,10 +342,7 @@ mod tests {
         std::fs::create_dir_all("/tmp/tiffin").unwrap();
         let mut container = Container::new(PathBuf::from("/tmp/tiffin"));
         container
-            .run(|| {
-                std::fs::create_dir_all("/tmp/tiffin/test").unwrap();
-                std::io::Result::Ok(())
-            })
+            .run(|| std::fs::create_dir_all("/tmp/tiffin/test").unwrap())
             .unwrap();
     }
 }
