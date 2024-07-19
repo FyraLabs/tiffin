@@ -11,16 +11,9 @@ license = "MIT"
 
 [dependencies]
 itertools = "0.13.0"
-nix = { version = "0.27.1", features = [
-    "fs",
-    "env",
-    "dir",
-    "user",
-    "mount",
-    "sched",
-] }
+nix = { version = "0.29.0", features = ["dir", "mount"] }
 sys-mount = "3"
-tracing = "0.1.37"
+tracing = "0.1.40"
 
 [features]
 root = []
