@@ -6,6 +6,8 @@ It spawned from Katsu's chroot code, which was originally designed for setting u
 
 This library does not contain methods for setting up the chroot environment, but will use an existing rootfs to create a jail out of.
 
+Please note that this library is not designed for isolating untrusted workloads.
+
 ## References
 
 <https://github.com/util-linux/util-linux/blob/master/sys-utils/unshare.c>

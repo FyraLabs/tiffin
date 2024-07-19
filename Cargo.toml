@@ -3,8 +3,13 @@ name = "tiffin"
 description = "A minimal container runtime for Linux for setting up chroot-like environments"
 version = "0.3.0"
 edition = "2021"
+categories = ["os::linux-apis", "virtualization"]
 keywords = ["container", "runtime", "chroot", "linux", "nix"]
 license = "MIT"
+authors = ["Pornpipat 'Cappy Ishihara' Popum <cappy@fyralabs.com>"]
+repository = "https://github.com/FyraLabs/tiffin"
+homepage = "https://github.com/FyraLabs/tiffin"
+documentation = "https://docs.rs/tiffin"
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
