@@ -1,3 +1,6 @@
+//! # Setting up a container
+//!
+//! See [`Container::run()`].
 use itertools::Itertools;
 use std::{
     collections::HashMap,
@@ -231,6 +234,18 @@ impl Container {
     }
 
     /// Run a function inside the container chroot
+    ///
+    /// # Examples
+    /// ```no_run
+    /// tiffin::Container::new("/mnt".into()).run(|| {
+    ///   println!("Hello in {:?}", std::env::current_dir()?);
+    ///   std::io::Result::Ok(())
+    /// })??; // outer mount/chroot-related err + inner error from the closure
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    /// This raises an error if mounting, unmounting, entering or exiting the chroot jail failed.
     #[inline(always)]
     pub fn run<F, T>(&mut self, f: F) -> std::io::Result<T>
     where
