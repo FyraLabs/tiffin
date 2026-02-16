@@ -1,6 +1,8 @@
+//! # Setting up a container
+//!
+//! See [`Container::run()`].
 use itertools::Itertools;
 use std::{
-    collections::HashMap,
     fs::File,
     os::fd::AsRawFd,
     path::{Component, Path, PathBuf},
@@ -85,26 +87,23 @@ impl MountTarget {
 #[derive(Default)]
 pub struct MountTable {
     /// The table of mounts
-    /// The key is the device name, and value is the mount object
-    inner: HashMap<PathBuf, MountTarget>,
+    /// The first element in the tuple is the device name, and second element is the mount object
+    inner: Vec<(PathBuf, MountTarget)>,
     mounts: Vec<UnmountDrop<Mount>>,
 }
 
 impl MountTable {
     pub fn new() -> Self {
-        Self {
-            inner: HashMap::new(),
-            mounts: Vec::new(),
-        }
+        Self::default()
     }
     /// Sets the mount table
-    pub fn set_table(&mut self, table: HashMap<PathBuf, MountTarget>) {
+    pub fn set_table(&mut self, table: Vec<(PathBuf, MountTarget)>) {
         self.inner = table;
     }
 
     /// Adds a mount to the table
     pub fn add_mount(&mut self, mount: MountTarget, source: PathBuf) {
-        self.inner.insert(source, mount);
+        self.inner.push((source, mount));
     }
 
     pub fn add_sysmount(&mut self, mount: UnmountDrop<Mount>) {
@@ -114,7 +113,7 @@ impl MountTable {
     /// Sort mounts by mountpoint and depth
     /// Closer to root, and root is first
     /// everything else is either sorted by depth, or alphabetically
-    fn sort_mounts(&self) -> impl Iterator<Item = (&PathBuf, &MountTarget)> {
+    fn sort_mounts(&self) -> impl Iterator<Item = &(PathBuf, MountTarget)> {
         self.inner.iter().sorted_by(|(_, a), (_, b)| {
             match (a.target.components().count(), b.target.components().count()) {
                 (1, _) if a.target.components().next() == Some(Component::RootDir) => {
@@ -234,6 +233,18 @@ impl Container {
     }
 
     /// Run a function inside the container chroot
+    ///
+    /// # Examples
+    /// ```no_run
+    /// tiffin::Container::new("/mnt".into()).run(|| {
+    ///   println!("Hello in {:?}", std::env::current_dir()?);
+    ///   std::io::Result::Ok(())
+    /// })??; // outer mount/chroot-related err + inner error from the closure
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    /// This raises an error if mounting, unmounting, entering or exiting the chroot jail failed.
     #[inline(always)]
     pub fn run<F, T>(&mut self, f: F) -> std::io::Result<T>
     where
