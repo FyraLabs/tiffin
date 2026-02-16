@@ -5,7 +5,7 @@ use itertools::Itertools;
 use std::{
     fs::File,
     os::fd::AsRawFd,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 use sys_mount::{FilesystemType, Mount, MountFlags, Unmount, UnmountDrop, UnmountFlags};
 /// Mount object struct
@@ -114,10 +114,14 @@ impl MountTable {
     /// Closer to root, and root is first
     /// everything else is either sorted by depth, or alphabetically
     fn sort_mounts(&self) -> impl Iterator<Item = &(PathBuf, MountTarget)> {
-        self.inner.iter().sorted_unstable_by(|(_, a), (_, b)| {
+        self.inner.iter().sorted_by(|(_, a), (_, b)| {
             match (a.target.components().count(), b.target.components().count()) {
-                (1, _) => std::cmp::Ordering::Less,    // root dir
-                (_, 1) => std::cmp::Ordering::Greater, // root dir
+                (1, _) if a.target.components().next() == Some(Component::RootDir) => {
+                    std::cmp::Ordering::Less
+                } // root dir
+                (_, 1) if b.target.components().next() == Some(Component::RootDir) => {
+                    std::cmp::Ordering::Greater
+                } // root dir
                 (x, y) if x == y => a.target.cmp(&b.target),
                 (x, y) => x.cmp(&y),
             }
@@ -136,7 +140,6 @@ impl MountTable {
             .sort_mounts()
             .map(|(source, mount)| {
                 tracing::trace!(?mount, ?source, "Mounting");
-                std::fs::create_dir_all(root.join(source))?;
                 mount.mount(source, root)
             })
             .collect::<std::io::Result<_>>()?;
